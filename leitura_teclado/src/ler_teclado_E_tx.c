@@ -22,12 +22,12 @@ const struct device* stx = DEVICE_DT_GET(DT_NODELABEL(gpiob));
 /* queue to store up to 10 messages (aligned to 4-byte boundary) */
 K_MSGQ_DEFINE(uart_msgq, MSG_SIZE, 10, 4);
 
-
 static const struct device *const uart_dev = DEVICE_DT_GET(UART_DEVICE_NODE);
 
 /* receive buffer used in UART ISR callback */
 static char rx_buf[MSG_SIZE];
 static int rx_buf_pos;
+int mensagem_enviada = 1;
 
 /*
  * Read characters from UART until line end is detected. Afterwards push the
@@ -36,7 +36,7 @@ static int rx_buf_pos;
 void serial_cb(const struct device *dev, void *user_data)
 {
 	uint8_t c;
-
+	//k_mutex_lock(&mutexzinho, K_FOREVER);
 	if (!uart_irq_update(uart_dev)) {
 		return;
 	}
@@ -53,6 +53,7 @@ void serial_cb(const struct device *dev, void *user_data)
 
 			/* if queue is full, message is silently dropped */
 			k_msgq_put(&uart_msgq, &rx_buf, K_NO_WAIT);
+			mensagem_enviada = 0;
 
 			/* reset the buffer (it was copied to the msgq) */
 			rx_buf_pos = 0;
@@ -98,65 +99,79 @@ void ler_teclado(void){
 	uart_irq_rx_enable(uart_dev);
 
 	print_uart("Hello! I'm your echo bot.\r\n");
-	print_uart("Tell me something and press enter:\r\n");
+	print_uart("Tell me something and press enter blabla:\r\n");
 }
 
-char U = 0b01010101;
-char sync = 0b00010110;
-char STX = 0b00000010;
-char id = 0b10101010;
-char a[8];
-char end = 0b00010111;
+struct package {
+	char U;
+	char sync;
+	char STX;
+	char id;
+	char end;
+	char a[8];
+};
 
-int i = 104;
+int i = 96;
 int tx;
+struct package pacote;
 
 void TX(void){
 
-	while(1){
+	pacote.U = 0b01010101;
+	pacote.sync = 0b00010110;
+	pacote.STX = 0b00000010;
+	pacote.id = 0b01010111;
+	pacote.end = 0b00010111;
 
-		if(i>=96){
-			k_msgq_get(&uart_msgq, &a, K_FOREVER); // pega as msgs da message queue
-			i = 0;
-		}
+	if(mensagem_enviada == 0){
+	if(i>=96){
+	 	// pega as msgs da message queue
+		k_msgq_get(&uart_msgq, &(pacote.a), K_FOREVER);
+		i = 0;
+	}
 
-		if(i < 8){
-			tx = (U >> (7-i)) & 0b1;
-		}
-		else if(i < 16){
-			tx = (sync >> (7-(i%8))) & 0b1;
-		}
-		else if(i < 24){
-			tx = (STX >> (7-(i%8))) & 0b1;
-		}
-		else if(i < 32){
-			tx = (id >> (7-(i%8))) & 0b1;
-		}
-		else if(i < 88){
-			tx = (a[(i/8)-4] >> (7-(i%8))) & 0b1; // seleciona cada caractere da string e shift para o lado e faz uma mascara para enviar apenas um bit
-		}
-		else if(i < 96){
-			tx = (end >> (7-(i%8))) & 0b1;
-		}
+	if(i < 8){
+		tx = (pacote.U >> (7-i)) & 0b1;
+	}
+	else if(i < 16){
+		tx = (pacote.sync >> (7-(i%8))) & 0b1;
+	}
+	else if(i < 24){
+		tx = (pacote.STX >> (7-(i%8))) & 0b1;
+	}
+	else if(i < 32){
+		tx = (pacote.id >> (7-(i%8))) & 0b1;
+	}
+	else if(i < 88){
+		tx = (pacote.a[(i/8)-4]) >> (7-(i%8)) & 0b1; // seleciona cada caractere da string e shift para o lado e faz uma mascara para enviar apenas um bit
+	}
+	else if(i < 96){
+		tx = (pacote.end >> (7-(i%8))) & 0b1;
+	}
 
-		gpio_pin_configure(stx, 0x3, GPIO_OUTPUT_ACTIVE);
-		if(tx == 0b1){
-			gpio_pin_set(stx, 0x3, 1);
-			//printk("1");
-		}
-		else if(tx == 0b0){
-			gpio_pin_set(stx, 0x3, 0);
-			//printk("0");
-		}
+	gpio_pin_configure(stx, 0x3, GPIO_OUTPUT_ACTIVE);
+	if(tx == 0b1){
+		gpio_pin_set(stx, 0x3, 1);
+		printk("1");
+	}
+	else if(tx == 0b0){
+		gpio_pin_set(stx, 0x3, 0);
+		printk("0");
+	}
 
-		i++;
-		k_msleep(10);
+	i++;
+	if(i>=96){
+		printk("\n");
+		mensagem_enviada=1;
+	}
 	}
 }
 
-//K_TIMER_DEFINE(TX_id, TX, NULL);
-//k_timer_start(TX_id, K_MSEC(100), K_MSEC(10));
-
-
-K_THREAD_DEFINE(TX_id, MY_STACK_SIZE, TX, NULL, NULL, NULL, MY_PRIORITY, 0, 0); // Inicializar thread que executará F1
+//K_THREAD_DEFINE(TX_id, MY_STACK_SIZE, TX, NULL, NULL, NULL, 1, 0, 0); // Inicializar thread que executará F1
 K_THREAD_DEFINE(leitura_teclado, MY_STACK_SIZE, ler_teclado, NULL, NULL, NULL, MY_PRIORITY, 0, 0); // Inicializar thread que executará F1
+
+K_TIMER_DEFINE(TX_timer, TX, NULL);
+
+int main(){
+	k_timer_start(&TX_timer, K_MSEC(10), K_MSEC(10));
+}
