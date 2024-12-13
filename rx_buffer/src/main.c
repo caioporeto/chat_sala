@@ -35,7 +35,7 @@ struct package pacote_enviado;
 
 void RX_Buffer (void){
     //k_msleep(10); // aguarda um tempo para iniciar
-    int id = 0;;
+    int id = 0;
     int i = 0;
     int j = 0;
     int n = 0;
@@ -49,7 +49,7 @@ void RX_Buffer (void){
     if(aux == 0b0110) { // se os 2 do meio forem 1, colocar 1 no Buffer
         Buffer = (Buffer << 1) | 0b1;
     }
-    if(aux == 0b000) { // se os 2 do meio forem 0, colocar 0 no Buffer
+    if(aux == 0b0000) { // se os 2 do meio forem 0, colocar 0 no Buffer
         Buffer = (Buffer << 1) | 0b0;
     }
 

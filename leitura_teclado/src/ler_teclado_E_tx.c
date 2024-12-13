@@ -12,7 +12,13 @@
 
 /* change this to any other UART peripheral if desired */
 #define UART_DEVICE_NODE DT_CHOSEN(zephyr_shell_uart)
-const struct device* stx = DEVICE_DT_GET(DT_NODELABEL(gpiob));
+
+#define PIN_NUMBER 3 // Substitua pelo número do pino
+#define GPIO_NODE DT_NODELABEL(gpiob) // Controlador GPIO (troque por "gpioa" ou outro conforme necessário)
+#define pin_tx DT_ALIAS(sw0)
+
+const struct device *pino_RX = DEVICE_DT_GET(GPIO_NODE);
+static const struct gpio_dt_spec pino_TX = GPIO_DT_SPEC_GET(pin_tx, gpios);
 
 #define MY_STACK_SIZE 1024
 #define MY_PRIORITY 0
@@ -117,6 +123,8 @@ struct package pacote;
 
 void TX(void){
 
+	gpio_pin_configure(pino_RX, PIN_NUMBER, GPIO_INPUT); // define RX como input
+
 	pacote.U = 0b01010101;
 	pacote.sync = 0b00010110;
 	pacote.STX = 0b00000010;
@@ -148,30 +156,33 @@ void TX(void){
 	else if(i < 96){
 		tx = (pacote.end >> (7-(i%8))) & 0b1;
 	}
+	gpio_pin_set_dt(&pino_TX, tx);
 
-	gpio_pin_configure(stx, 0x3, GPIO_OUTPUT_ACTIVE);
-	if(tx == 0b1){
-		gpio_pin_set(stx, 0x3, 1);
+	/*
+	int bit_RX = !(gpio_pin_get(pino_RX , PIN_NUMBER));
+
+
+	if(bit_RX == 0b1){
 		printk("1");
 	}
-	else if(tx == 0b0){
-		gpio_pin_set(stx, 0x3, 0);
+	else if(bit_RX == 0b0){
 		printk("0");
 	}
+	*/
 
 	i++;
 	if(i>=96){
-		printk("\n");
+		//printk("\n");
 		mensagem_enviada=1;
 	}
 	}
 }
 
-//K_THREAD_DEFINE(TX_id, MY_STACK_SIZE, TX, NULL, NULL, NULL, 1, 0, 0); // Inicializar thread que executará F1
 K_THREAD_DEFINE(leitura_teclado, MY_STACK_SIZE, ler_teclado, NULL, NULL, NULL, MY_PRIORITY, 0, 0); // Inicializar thread que executará F1
 
 K_TIMER_DEFINE(TX_timer, TX, NULL);
 
 int main(){
+	int ret = gpio_pin_configure_dt(&pino_TX, GPIO_OUTPUT_ACTIVE);
 	k_timer_start(&TX_timer, K_MSEC(10), K_MSEC(10));
 }

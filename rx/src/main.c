@@ -3,6 +3,16 @@
 #include <zephyr/drivers/uart.h>
 #include <zephyr/drivers/gpio.h>
 #include <string.h>
+#include <zephyr/sys/printk.h>
+#include <stdbool.h>
+#include <stddef.h>
+
+K_MUTEX_DEFINE(mutex_TX_RX);
+K_MUTEX_DEFINE(mutex_RX_Buffer);
+K_MUTEX_DEFINE(mutex_ninguem_esta_transmitindo);
+
+K_CONDVAR_DEFINE(cond_RX_TX);
+K_CONDVAR_DEFINE(cond_RX_Buffer);
 
 #define PIN_NUMBER 3 // Substitua pelo número do pino
 #define GPIO_NODE DT_NODELABEL(gpiob) // Controlador GPIO (troque por "gpioa" ou outro conforme necessário)
