@@ -2,6 +2,6 @@
 
 cmake_minimum_required(VERSION 3.20.0)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
-project(eventinho2)
+project(chat_sala)
 
-target_sources(app PRIVATE src/eventinho2.c)
+target_sources(app PRIVATE src/chat_sala.c)
