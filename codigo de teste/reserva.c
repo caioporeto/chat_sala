@@ -10,6 +10,7 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/__assert.h>
+#include <zephyr/random/random.h>
 #include <string.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -24,7 +25,7 @@
 
 K_MUTEX_DEFINE(mutex_TX_RX);
 K_MUTEX_DEFINE(mutex_RX_Buffer);
-K_MUTEX_DEFINE(mutex_ninguem_esta_transmitindo);
+K_MUTEX_DEFINE(pode_transmitir);
 K_MUTEX_DEFINE(mymutex);
 
 
@@ -68,7 +69,7 @@ struct package {
 
 static struct package pacote_recebido;
 static struct package pacote_enviado = {.U = 0b01010101, .sync = 0b00010110, .STX = 0b00000010, .id = 0b01010000, .end = 0b00010111};
-char id_random = 0b10101111;
+char id_random = 0b10101001;
 
 void montaBuffer(){
 
@@ -83,6 +84,7 @@ void montaBuffer(){
 int bits = 0;
 int p = 0;
 int m = 0;
+int pin; 
 
 void RX (void){
     
@@ -91,123 +93,140 @@ void RX (void){
 
 	gpio_pin_configure(pino_RX, PIN_NUMBER, GPIO_INPUT); // define RX como input
 
-	int pin = !(gpio_pin_get(pino_RX , PIN_NUMBER));
+	pin = !(gpio_pin_get(pino_RX , PIN_NUMBER));
 
-	recebido_RX = (recebido_RX << 1) | pin; 
+	k_condvar_signal(&cond_RX_Buffer);
+
+}
+
+void RXBuffer(){
+	struct package *recebido = &pacote_recebido;
+	struct package *enviado = &pacote_enviado;
+
+	while(1){
+
+		k_condvar_wait(&cond_RX_Buffer, &mutex_RX_Buffer, K_FOREVER);
+
+		recebido_RX = (recebido_RX << 1) | pin; 
+
+		bits++;
+		p++;
+
+		printk("%d", pin);
+		if(((recebido_RX >> 1) & 0b1) == ((recebido_RX >> 2) & 0b1) &&
+		((recebido_RX >> 5) & 0b1) == ((recebido_RX >> 6) & 0b1) &&
+		((recebido_RX >> 9) & 0b1) == ((recebido_RX >> 10) & 0b1) &&
+		((recebido_RX >> 13) & 0b1) == ((recebido_RX >> 14) & 0b1) &&
+		((recebido_RX >> 17) & 0b1) == ((recebido_RX >> 18) & 0b1) &&
+		((recebido_RX >> 21) & 0b1) == ((recebido_RX >> 22) & 0b1) &&
+		((recebido_RX >> 25) & 0b1) == ((recebido_RX >> 26) & 0b1) &&
+		((recebido_RX >> 29) & 0b1) == ((recebido_RX >> 30) & 0b1)) { 
+			//printk("byte valido");
 		
-	bits++;
-	p++;
+			montaBuffer();
 
-
-	printk("%d", pin);
-	if(((recebido_RX >> 1) & 0b1) == ((recebido_RX >> 2) & 0b1) &&
-	((recebido_RX >> 5) & 0b1) == ((recebido_RX >> 6) & 0b1) &&
-	((recebido_RX >> 9) & 0b1) == ((recebido_RX >> 10) & 0b1) &&
-	((recebido_RX >> 13) & 0b1) == ((recebido_RX >> 14) & 0b1) &&
-	((recebido_RX >> 17) & 0b1) == ((recebido_RX >> 18) & 0b1) &&
-	((recebido_RX >> 21) & 0b1) == ((recebido_RX >> 22) & 0b1) &&
-	((recebido_RX >> 25) & 0b1) == ((recebido_RX >> 26) & 0b1) &&
-	((recebido_RX >> 29) & 0b1) == ((recebido_RX >> 30) & 0b1)) { 
-	    //printk("byte valido");
-	
-		montaBuffer();
-
-		if((Buffer == enviado->U) && (recebido->U != enviado->U)){
-			recebido->U = Buffer;
-			printk("U");
-			p=0;
-		}
-
-		if(recebido->U == enviado->U){		
-		
-			if(((Buffer == enviado->sync) && (p==32) && (recebido->sync != enviado->sync))){
-				recebido->sync = Buffer;
-				printk("sync");
+			if((Buffer == enviado->U) && (recebido->U != enviado->U)){
+				recebido->U = Buffer;
+				k_mutex_lock(&pode_transmitir, K_NO_WAIT);
+				printk("U");
+			
 				p=0;
 			}
 
-			if(recebido->sync == enviado->sync){
-				if((Buffer == enviado->STX && (p==32) && (recebido->STX != enviado->STX))){
-					printk("STX");
-					recebido->STX = Buffer;
+			if(recebido->U == enviado->U){		
+			
+				if(((Buffer == enviado->sync) && (p==32) && (recebido->sync != enviado->sync))){
+					recebido->sync = Buffer;
+					printk("sync");
 					p=0;
 				}
 
-				if((recebido->STX == enviado->STX)){
-
-					if((p==32) && (Buffer != enviado->id) && (recebido->id != enviado->id)){
-						recebido->id = Buffer;
-						recebido->n = recebido->id & 0b111;
-						printk("id não nosso, %d %d ", recebido->id, recebido->n);
-					}
-
-					if((p>32) && (recebido->id != enviado->id)){
-						//printk("entrou aqui sim");
-						//printk("%c", Buffer);
-						if(j < (recebido->n)){
-							m++;
-							if(m==16){
-								recebido->a[j] = Buffer;
-								//printk(" %c j%dj ", recebido->a[j], j);
-								j++;
-								m=0;
-							}
-						}
-						
-						if(j == ((recebido->n))){
-								//printk("entrei aq");
-								if((Buffer == enviado->end)){
-									reenvia = 0;
-									printk("end\n");
-									printk("\nestamos recebendo certo!\nRecebemos: ");
-									k_msgq_put(&msg_recebida, &(recebido->a), K_FOREVER);
-									recebido->end = Buffer;
-									recebido->U = 0;
-									recebido->sync = 0;
-									recebido->STX = 0;
-									recebido->id = 0;
-									recebido->end = 0;
-									j=0;
-								}
-							}
-					}
-					
-					if(Buffer == enviado->id && (p==32) && (recebido->id != enviado->id)){
-						recebido->id = Buffer;
-						printk("id nosso");
+				if(recebido->sync == enviado->sync){
+					if((Buffer == enviado->STX && (p==32) && (recebido->STX != enviado->STX))){
+						printk("STX");
+						recebido->STX = Buffer;
 						p=0;
 					}
 
-					if(recebido->id == enviado->id){
+					if((recebido->STX == enviado->STX)){
+
+						if((p==32) && (Buffer != enviado->id) && (recebido->id != enviado->id)){
+							recebido->id = Buffer;
+							recebido->n = recebido->id & 0b111;
+							printk("id não nosso, %d %d ", recebido->id, recebido->n);
+						}
+
+						if((p>32) && (recebido->id != enviado->id)){
+							//printk("entrou aqui sim");
+							//printk("%c", Buffer);
+							if(j < (recebido->n)){
+								m++;
+								if(m==16){
+									recebido->a[j] = Buffer;
+									//printk(" %c j%dj ", recebido->a[j], j);
+									j++;
+									m=0;
+								}
+							}
+							
+							if(j == ((recebido->n))){
+									//printk("entrei aq");
+									if((Buffer == enviado->end)){
+										reenvia = 0;
+										printk("end\n");
+										printk("\nestamos recebendo certo!\nRecebemos: ");
+										k_msgq_put(&msg_recebida, &(recebido->a), K_FOREVER);
+										recebido->end = Buffer;
+										recebido->U = 0;
+										recebido->sync = 0;
+										recebido->STX = 0;
+										recebido->id = 0;
+										recebido->end = 0;
+										j=0;
+										k_mutex_unlock(&pode_transmitir);
+									}
+								}
+						}
 						
-						recebido->n = (recebido->id) & 0b111;
-						if((Buffer == enviado->a[0]) && (p==32)){
-							printk("%c", enviado->a[0]);
-							recebido->a[0] = Buffer;
+						if(Buffer == enviado->id && (p==32) && (recebido->id != enviado->id)){
+							recebido->id = Buffer;
+							printk("id nosso");
 							p=0;
 						}
 
-						if(recebido->a[j] == enviado->a[j] && (p==32)){
-							if((Buffer == enviado->a[(j+1)])){
-								printk(" %c ", enviado->a[(j+1)]);
-								recebido->a[(j+1)] = Buffer;
-								j++;
+						if(recebido->id == enviado->id){
+							
+							recebido->n = (recebido->id) & 0b111;
+							if((Buffer == enviado->a[0]) && (p==32) && (recebido->a[0] != enviado->a[0])){
+								printk("%c", enviado->a[0]);
+								recebido->a[0] = Buffer;
 								p=0;
 							}
-							if(j == ((enviado->n)-1)){
-								printk("entrei aq");
-								if((Buffer == enviado->end)){
-									reenvia = 0;
-									printk("end\n");
-									printk("\nestamos transmitindo certo!\nRecebemos: ");
-									k_msgq_put(&msg_recebida, &(recebido->a), K_FOREVER);
-									recebido->end = Buffer;
-									recebido->U = 0;
-									recebido->sync = 0;
-									recebido->STX = 0;
-									recebido->id = 0;
-									recebido->end = 0;
-									j=0;
+
+							if(recebido->a[j] == enviado->a[j] && (p==32)){
+								if((Buffer == enviado->a[(j+1)])){
+									printk(" %c ", enviado->a[(j+1)]);
+									recebido->a[(j+1)] = Buffer;
+									j++;
+									p=0;
+								}
+								if(j == ((enviado->n)-1)){
+									printk("entrei aq");
+									if((Buffer == enviado->end)){
+										reenvia = 0;
+										printk("end\n");
+										printk("\nestamos transmitindo certo!\nRecebemos: ");
+										k_msgq_put(&msg_recebida, &(recebido->a), K_FOREVER);
+										recebido->end = Buffer;
+										recebido->U = 0;
+										recebido->sync = 0;
+										recebido->STX = 0;
+										recebido->id = 0;
+										recebido->a[0] = 0;
+										recebido->end = 0;
+										j=0;
+										k_mutex_unlock(&pode_transmitir);
+									}
 								}
 							}
 						}
@@ -233,7 +252,7 @@ void seleciona_bit(int b){
 		tx = (pacote_enviado.STX >> (7-(b%8))) & 0b1;
 	}
 	else if(b < 32){
-		tx = (pacote_enviado.id >> (7-(b%8))) & 0b1;
+		tx = (id_random >> (7-(b%8))) & 0b1;
 	}
 	else if(b < (32+(8*(enviado->n)))){
 		tx = (pacote_enviado.a[(b/8)-4]) >> (7-(b%8)) & 0b1; // seleciona cada caractere da string e shift para o lado e faz uma mascara para enviar apenas um bit
@@ -322,6 +341,17 @@ void ler_teclado(void){
 		j=0;
 		p=0;
 
+		int colisoes=0;
+		int tempo=0;
+
+		while(k_mutex_lock(&pode_transmitir, K_NO_WAIT) != 0){
+			colisoes++;
+			for(int h=0; h <= colisoes; h++){
+				tempo += sys_rand32_get();
+			}
+			k_msleep(tempo);
+		}
+
 		for(k_bit = 0; k_bit < (40+(8*(enviado->n))+2); k_bit++){
 
 			k_condvar_wait(&mycondvar, &mymutex, K_FOREVER);
@@ -329,6 +359,7 @@ void ler_teclado(void){
 		
 		}
 		tx = 0;
+		k_mutex_unlock(&pode_transmitir);
 	}
 }
 
@@ -360,6 +391,8 @@ void print_tela(){
 K_THREAD_DEFINE(printar_na_tela, MY_STACK_SIZE, print_tela, NULL, NULL, NULL, 1, 0, 0);
 
 K_THREAD_DEFINE(leitura_teclado, MY_STACK_SIZE, ler_teclado, NULL, NULL, NULL, MY_PRIORITY, 0, 0); // Inicializar thread que executará F1
+
+K_THREAD_DEFINE(Buffer_RX, MY_STACK_SIZE, RXBuffer, NULL, NULL, NULL, MY_PRIORITY, 0, 0); // Inicializar thread que executará F1
 
 K_TIMER_DEFINE(TX_timer, TX, NULL);
 

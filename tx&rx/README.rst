@@ -1,97 +1,41 @@
-.. zephyr:code-sample:: eventinho2
-   :name: Eventinho2
-   :relevant-api: gpio_interface
+.. zephyr:code-sample:: uart
+   :name: UART echo
+   :relevant-api: uart_interface
 
-   Blink an LED forever using the GPIO API.
+   Read data from the console and echo it back.
 
 Overview
 ********
 
-The eventinho2 sample blinks an LED forever using the :ref:`GPIO API <gpio_api>`.
+This sample demonstrates how to use the UART serial driver with a simple
+echo bot. It reads data from the console and echoes the characters back after
+an end of line (return key) is received.
 
-The source code shows how to:
+The polling API is used for sending data and the interrupt-driven API
+for receiving, so that in theory the thread could do something else
+while waiting for incoming data.
 
-#. Get a pin specification from the :ref:`devicetree <dt-guide>` as a
-   :c:struct:`gpio_dt_spec`
-#. Configure the GPIO pin as an output
-#. Toggle the pin forever
-
-See :zephyr:code-sample:`pwm-eventinho2` for a similar sample that uses the PWM API instead.
-
-.. _eventinho2-sample-requirements:
-
-Requirements
-************
-
-Your board must:
-
-#. Have an LED connected via a GPIO pin (these are called "User LEDs" on many of
-   Zephyr's :ref:`boards`).
-#. Have the LED configured using the ``led0`` devicetree alias.
+By default, the UART peripheral that is normally used for the Zephyr shell
+is used, so that almost every board should be supported.
 
 Building and Running
 ********************
 
-Build and flash eventinho2 as follows, changing ``reel_board`` for your board:
+Build and flash the sample as follows, changing ``nrf52840dk/nrf52840`` for
+your board:
 
 .. zephyr-app-commands::
-   :zephyr-app: samples/basic/eventinho2
-   :board: reel_board
+   :zephyr-app: samples/drivers/uart/echo_bot
+   :board: nrf52840dk/nrf52840
    :goals: build flash
    :compact:
 
-After flashing, the LED starts to blink and messages with the current LED state
-are printed on the console. If a runtime error occurs, the sample exits without
-printing to the console.
+Sample Output
+=============
 
-Build errors
-************
+.. code-block:: console
 
-You will see a build error at the source code line defining the ``struct
-gpio_dt_spec led`` variable if you try to build eventinho2 for an unsupported
-board.
-
-On GCC-based toolchains, the error looks like this:
-
-.. code-block:: none
-
-   error: '__device_dts_ord_DT_N_ALIAS_led_P_gpios_IDX_0_PH_ORD' undeclared here (not in a function)
-
-Adding board support
-********************
-
-To add support for your board, add something like this to your devicetree:
-
-.. code-block:: DTS
-
-   / {
-   	aliases {
-   		led0 = &myled0;
-   	};
-
-   	leds {
-   		compatible = "gpio-leds";
-   		myled0: led_0 {
-   			gpios = <&gpio0 13 GPIO_ACTIVE_LOW>;
-                };
-   	};
-   };
-
-The above sets your board's ``led0`` alias to use pin 13 on GPIO controller
-``gpio0``. The pin flags :c:macro:`GPIO_ACTIVE_HIGH` mean the LED is on when
-the pin is set to its high state, and off when the pin is in its low state.
-
-Tips:
-
-- See :dtcompatible:`gpio-leds` for more information on defining GPIO-based LEDs
-  in devicetree.
-
-- If you're not sure what to do, check the devicetrees for supported boards which
-  use the same SoC as your target. See :ref:`get-devicetree-outputs` for details.
-
-- See :zephyr_file:`include/zephyr/dt-bindings/gpio/gpio.h` for the flags you can use
-  in devicetree.
-
-- If the LED is built in to your board hardware, the alias should be defined in
-  your :ref:`BOARD.dts file <devicetree-in-out-files>`. Otherwise, you can
-  define one in a :ref:`devicetree overlay <set-devicetree-overlays>`.
+    Hello! I\'m your echo bot.
+    Tell me something and press enter:
+    # Type e.g. "Hi there!" and hit enter!
+    Echo: Hi there!
